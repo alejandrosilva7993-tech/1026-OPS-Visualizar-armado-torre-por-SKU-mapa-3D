@@ -349,14 +349,12 @@
       /* Misma paleta y vistas del mapa original; sin camión, perspectiva por defecto */
       /* Tonos bien separados (ref. mapa 3D + contraste por matiz, no solo azules) */
       var PALETA_SKU = ['#2196dd', '#ef4444', '#16a34a', '#f59e0b', '#7c3aed', '#06b6d4', '#db2777', '#84cc16'];
-      /* Tarima estibada superior: opaca, otra familia de matices igualmente contrastados */
-      var PALETA_SUPERIOR = ['#0e4f80', '#c2410c', '#15803d', '#a855f7', '#0891b2', '#be123c', '#ca8a04', '#4d7c0f'];
       var ALTURA_TARIMA = 14;
       var VISTAS = {
-        perspectiva: { rx: -18, ry: -32, zoom: 0.58 },
-        superior:    { rx: -88, ry: 0,   zoom: 1.15 },
-        lateral:     { rx: -8,  ry: -90, zoom: 0.95 },
-        frontal:     { rx: -8,  ry: 0,   zoom: 0.95 }
+        perspectiva: { rx: -17, ry: -33, zoom: 0.85 },
+        superior:    { rx: -88, ry: 0,   zoom: 1.6 },
+        lateral:     { rx: -6,  ry: -90, zoom: 1.35 },
+        frontal:     { rx: -6,  ry: 0,   zoom: 1.35 }
       };
 
       function gridCama(z, h, cols, rows, w, d) {
@@ -753,7 +751,8 @@
         return out;
       }
 
-      function tarimasDeEscena(principal) {
+      /* Tarimas de la misma estiba, de abajo hacia arriba (Nivel 1 → Nivel 2) */
+      function tarimasDeEstiba(principal) {
         if (principal.estiba == null) return [principal];
         return TARIMAS.filter(function (t) { return t.estiba === principal.estiba; })
           .sort(function (a, b) {
@@ -763,77 +762,62 @@
           });
       }
 
-      function tonoSku(sku, esSuperior) {
-        var clave = (esSuperior ? 'sup:' : 'base:') + sku;
-        if (!mapa.tonosSku[clave]) {
-          var paleta = esSuperior ? PALETA_SUPERIOR : PALETA_SKU;
-          var idx = Object.keys(mapa.tonosSku).filter(function (k) {
-            return k.indexOf(esSuperior ? 'sup:' : 'base:') === 0;
-          }).length;
-          mapa.tonosSku[clave] = paleta[idx % paleta.length];
+      /* Tarima inmediatamente debajo; si no hay ninguna, es Base */
+      function tarimaDeApoyo(pos) {
+        if (pos.estiba == null || pos.nivel === 'Nivel 1' || !pos.nivel) return null;
+        var debajo = tarimasDeEstiba(pos).filter(function (t) {
+          return t.id !== pos.id && t.nivel === 'Nivel 1';
+        })[0];
+        return debajo || null;
+      }
+
+      function textoApoyadaSobre(pos) {
+        var apoyo = tarimaDeApoyo(pos);
+        return apoyo ? ('tarima ' + apoyo.codigo) : 'N/A';
+      }
+
+      function tonoSku(sku) {
+        if (!mapa.tonosSku[sku]) {
+          var idx = Object.keys(mapa.tonosSku).length;
+          mapa.tonosSku[sku] = PALETA_SKU[idx % PALETA_SKU.length];
         }
-        return mapa.tonosSku[clave];
+        return mapa.tonosSku[sku];
       }
 
-      function esTarimaSuperior(tarimaId) {
-        var superior = tarimaSuperiorEscena();
-        return !!(superior && superior.pos.id === tarimaId);
-      }
-
-      /*
-        Estiba: tarimas apiladas (Nivel 1 abajo, Nivel 2 arriba).
-        Cada tarima respeta su propia altura máxima del perfil desde su plataforma.
-      */
+      /* El mapa 3D muestra solo la tarima seleccionada */
       function construirEscena() {
-        var lista = tarimasDeEscena(mapa.tarima);
-        var elevacion = 0;
-        var fondoTotal = 0;
-        var anchoBase = 120;
+        var t = mapa.tarima;
+        var dims = t.dimensionesTarima || { ancho: 120, fondo: 100 };
         mapa.cajas = [];
         mapa.tarimas = [];
         mapa.tonosSku = {};
 
-        lista.forEach(function (t) {
-          var dims = t.dimensionesTarima || { ancho: 120, fondo: 100 };
-          var esPrincipal = t.id === mapa.tarima.id;
-          var dy = elevacion;
-          anchoBase = dims.ancho;
-          fondoTotal = Math.max(fondoTotal, dims.fondo);
-          mapa.tarimas.push({
-            pos: t,
+        mapa.tarimas.push({
+          pos: t,
+          offsetX: 0,
+          offsetZ: 0,
+          offsetY: 0,
+          ancho: dims.ancho,
+          fondo: dims.fondo,
+          principal: true
+        });
+        cajasDeTarima(t).forEach(function (c) {
+          mapa.cajas.push({
             offsetX: 0,
             offsetZ: 0,
-            offsetY: dy,
-            ancho: dims.ancho,
-            fondo: dims.fondo,
-            principal: esPrincipal
+            offsetY: 0,
+            x: c.x, y: c.y, z: c.z, w: c.w, d: c.d, h: c.h,
+            sku: c.sku,
+            desc: c.desc,
+            torre: c.torre,
+            tarimaId: c.tarimaId,
+            principal: true
           });
-          cajasDeTarima(t).forEach(function (c) {
-            mapa.cajas.push({
-              offsetX: 0,
-              offsetZ: 0,
-              offsetY: dy,
-              x: c.x, y: c.y, z: c.z, w: c.w, d: c.d, h: c.h,
-              sku: c.sku,
-              desc: c.desc,
-              torre: c.torre,
-              tarimaId: c.tarimaId,
-              principal: esPrincipal,
-              superior: false
-            });
-          });
-          /* La siguiente tarima de la estiba se apoya sobre la altura final (≤ máx.) */
-          elevacion += ALTURA_TARIMA + alturaFinal(t);
+          tonoSku(c.sku);
         });
 
-        var idSuperior = mapa.tarimas.length ? mapa.tarimas[mapa.tarimas.length - 1].pos.id : null;
-        mapa.cajas.forEach(function (c) {
-          c.superior = c.tarimaId === idSuperior && mapa.tarimas.length > 1;
-          tonoSku(c.sku, c.superior);
-        });
-
-        mapa.centro = anchoBase / 2;
-        mapa.centroFondo = Math.max(fondoTotal, 100) / 2;
+        mapa.centro = dims.ancho / 2;
+        mapa.centroFondo = dims.fondo / 2;
         mapa.escala = geometriaEscena().escala;
       }
 
@@ -841,8 +825,7 @@
         var stage = document.getElementById('map3dStage');
         var ancho = stage.clientWidth || 960;
         var alto = stage.clientHeight || 540;
-        /* Escala más abierta para ver la estiba completa y la línea de altura máxima */
-        return { escala: Math.min(ancho, alto) / 420, ancho: ancho, alto: alto };
+        return { escala: Math.min(ancho, alto) / 320, ancho: ancho, alto: alto };
       }
 
       function medidasCaja(caja) {
@@ -897,15 +880,12 @@
             -(caja.offsetY + ALTURA_TARIMA + caja.z + caja.h / 2) * S,
             (caja.offsetZ + caja.y + caja.d / 2 - mapa.centroFondo) * S,
             caja.w * S, caja.h * S, caja.d * S,
-            tonoSku(caja.sku, caja.superior),
+            tonoSku(caja.sku),
             'type="button" data-box="' + i + '" aria-label="' + esc(etiqueta) + '"',
             'cargo-box');
         });
 
-        /*
-          Altura máxima del perfil: siempre por encima de la última tarima (la de arriba).
-          Se marca desde la plataforma de esa tarima + altura máxima; la carga no la rebasa.
-        */
+        /* Altura máxima del perfil: por encima de la tarima mostrada */
         var superior = tarimaSuperiorEscena();
         if (superior) {
           var maxima = alturaMaxima(superior.pos);
@@ -968,6 +948,7 @@
         destino.innerHTML =
           fila('Identificador de tarima', esc(pos.codigo)) +
           fila('Consignatario', esc(pos.consignatario)) +
+          fila('Apoyada sobre', esc(textoApoyadaSobre(pos))) +
           fila('Tipo de tarima', esc(tipoLabel(pos.tipoTarima))) +
           fila('Número de torres', esc(pos.numTorres)) +
           fila('SKU distintos contra el máximo', esc(pos.skuDistintos) + ' contra ' + esc(pos.skuMax)) +
@@ -979,12 +960,10 @@
         var legend = document.getElementById('skuLegend');
         var vistos = {};
         var items = mapa.cajas.map(function (c) {
-          var clave = c.sku + (c.superior ? '|sup' : '');
-          if (vistos[clave]) return '';
-          vistos[clave] = true;
+          if (vistos[c.sku]) return '';
+          vistos[c.sku] = true;
           return '<div class="sku-legend__item"><span class="sku-legend__swatch" style="background:' +
-            tonoSku(c.sku, c.superior) + '"></span><span>' + esc(c.sku) +
-            (c.superior ? ' · Nivel 2' : '') + '</span></div>';
+            tonoSku(c.sku) + '"></span><span>' + esc(c.sku) + '</span></div>';
         }).join('');
         legend.innerHTML = items || '';
       }
@@ -992,19 +971,8 @@
       function renderEncabezado() {
         var pos = mapa.tarima;
         document.getElementById('map3dTitle').textContent = 'Mapa 3D · Tarima ' + pos.codigo;
-        var escena = tarimasDeEscena(pos);
-        if (pos.estiba != null && escena.length > 1) {
-          document.getElementById('map3dSubtitle').textContent =
-            tipoLabel(pos.tipoTarima) + ' · Estiba ' + pos.estiba + ' · ' +
-            escena.map(function (t) {
-              return (t.nivel || 'Tarima') + ' ' + t.codigo;
-            }).join(' + ');
-        } else {
-          document.getElementById('map3dSubtitle').textContent =
-            tipoLabel(pos.tipoTarima) + (pos.estiba != null
-              ? ' · Estiba ' + pos.estiba + ' · ' + (pos.nivel || '')
-              : ' · Sin estiba');
-        }
+        document.getElementById('map3dSubtitle').textContent =
+          tipoLabel(pos.tipoTarima) + ' · Apoyada sobre ' + textoApoyadaSobre(pos);
       }
 
       function abrirMapa(pos, trigger) {
