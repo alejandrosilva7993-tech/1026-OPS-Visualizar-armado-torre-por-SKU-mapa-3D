@@ -971,8 +971,7 @@
       function renderEncabezado() {
         var pos = mapa.tarima;
         document.getElementById('map3dTitle').textContent = 'Mapa 3D · Tarima ' + pos.codigo;
-        document.getElementById('map3dSubtitle').textContent =
-          tipoLabel(pos.tipoTarima) + ' · Apoyada sobre ' + textoApoyadaSobre(pos);
+        document.getElementById('map3dSubtitle').textContent = tipoLabel(pos.tipoTarima);
       }
 
       function abrirMapa(pos, trigger) {
